@@ -108,15 +108,15 @@ jobs:
             docker image prune -f
             docker logout ghcr.io
             
-            # docker restart main_nginx
-            echo "Checking main_nginx configuration..."
-            result=$(docker exec main_nginx nginx -t 2>&1)
+            # docker restart nginx
+            echo "Checking nginx configuration..."
+            result=$(docker exec nginx nginx -t 2>&1)
             status=$?
             echo "$result"
             
             if [ $status -eq 0 ]; then
               echo "✅ Nginx configuration is valid"
-              docker exec main_nginx nginx -s reload
+              docker exec nginx nginx -s reload
             else
               echo "❌ Nginx configuration check failed"
               echo "Checking container status..."
