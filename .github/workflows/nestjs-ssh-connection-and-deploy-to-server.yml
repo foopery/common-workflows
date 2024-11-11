@@ -89,7 +89,7 @@ jobs:
             # Step2 Prisma Migrate Deploy and Container Deploy
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull ghcr.io/${{ env.REPO_NAME }}/prisma-migrate-deploy:${{ env.branch_name }}
-            docker run --name ${{ env.github_repo}}-prisma-migrate-deploy --env-file /home/docker-manager/env/${{ env.github_repo }}.env --rm ghcr.io/${{ env.REPO_NAME }}/prisma-migrate-deploy:${{ env.branch_name }} || exit 1
+            docker run --name ${{ env.github_repo}}-prisma-migrate-deploy --env-file /home/docker-manager/env/${{ env.github_repo }}.env --network router --rm ghcr.io/${{ env.REPO_NAME }}/prisma-migrate-deploy:${{ env.branch_name }} || exit 1
             
             # Step3 Container Deploy
             docker pull ghcr.io/${{ env.REPO_NAME }}/api:${{ env.branch_name }}
