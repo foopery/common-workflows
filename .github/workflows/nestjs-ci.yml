@@ -15,9 +15,6 @@ on:
         required: false
         default: 'false'
         type: string
-    secrets:
-      PAT:
-        required: true
 
 jobs:
   continuous-integration:
