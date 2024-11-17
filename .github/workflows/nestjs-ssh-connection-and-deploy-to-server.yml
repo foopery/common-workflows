@@ -89,7 +89,7 @@ jobs:
             # Step2 Prisma Migrate Deploy and Container Deploy
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker pull ghcr.io/${{ env.REPO_NAME }}/prisma-migrate-deploy:${{ env.branch_name }}
-            docker run --name ${{ env.github_repo}}-prisma-migrate-deploy --env-file /home/docker-manager/env/${{ env.github_repo }}/.${{ steps.set-secrets.outputs.SSH_NODE_ENV }}.env --network router --rm ghcr.io/${{ env.REPO_NAME }}/prisma-migrate-deploy:${{ env.branch_name }} || exit 1
+            docker run --name ${{ env.github_repo}}-prisma-migrate-deploy --env-file /home/docker-manager/env/${{ env.github_repo }}/${{ steps.set-secrets.outputs.SSH_NODE_ENV }}.env --network router --rm ghcr.io/${{ env.REPO_NAME }}/prisma-migrate-deploy:${{ env.branch_name }} || exit 1
             
             # Step3 Container Deploy
             docker pull ghcr.io/${{ env.REPO_NAME }}/api:${{ env.branch_name }}
@@ -99,7 +99,7 @@ jobs:
             -v /home/docker-manager/logs/${{ env.github_repo }}/${{ steps.set-secrets.outputs.SSH_NODE_ENV }}:/logs \
             --network router \
             --restart=unless-stopped \
-            --env-file /home/docker-manager/env/${{ env.github_repo }}/.${{ steps.set-secrets.outputs.SSH_NODE_ENV }}.env \
+            --env-file /home/docker-manager/env/${{ env.github_repo }}/${{ steps.set-secrets.outputs.SSH_NODE_ENV }}.env \
             -e NODE_ENV=${{ steps.set-secrets.outputs.SSH_NODE_ENV }} \
             ghcr.io/${{ env.REPO_NAME }}/api:${{ env.branch_name }}
             
