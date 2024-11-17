@@ -77,13 +77,13 @@ jobs:
           port: ${{ steps.set-secrets.outputs.SSH_PORT }}
           script: |
             # Step1 Check if the nginx conf file exists
-            FILE_NAME="${{ env.github_repo }}.conf"
+            FILE_NAME="${{ env.github_repo }}-${{ steps.set-secrets.outputs.SSH_NODE_ENV }}.conf"
             CONFIG_TEMPLATE="/home/docker-manager/nginx_configs/config_form.txt"
             TARGET_FILE="/home/docker-manager/nginx_configs/$FILE_NAME"
             if [ ! -f "$TARGET_FILE" ]; then
             echo "컨테이너의 프록시 라우팅 파일이 구성되어있지 않아 새로 생성합니다."
             CONTAINER_URI="${{ inputs.container-uri }}"
-            sed -e "s|URL|$CONTAINER_URI|g" -e "s|CONTAINER|${{ env.github_repo }}|g" "$CONFIG_TEMPLATE" > "$TARGET_FILE"
+            sed -e "s|URL|$CONTAINER_URI|g" -e "s|CONTAINER|${{ env.github_repo }}-${{ steps.set-secrets.outputs.SSH_NODE_ENV }}|g" "$CONFIG_TEMPLATE" > "$TARGET_FILE"
             fi
             
             # Step2 Prisma Migrate Deploy and Container Deploy
