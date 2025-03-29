@@ -1,0 +1,52 @@
+name: (dev) 서버 도커 이미지 생성 및 배포
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: "배포 대상 브랜치명을 전달해주세요."
+        required: true
+        type: string
+      container-name:
+        description: "도커 컨테이너명을 전달해주세요."
+        required: true
+        type: string
+      is-push-image:
+        description: "이미지 push 여부를 전달해주세요(true|false)"
+        type: boolean
+        default: true
+      is-deploy-server:
+        description: "서버 배포 여부를 전달해주세요(true|false)"
+        type: boolean
+        default: true
+    secrets:
+      DEV_SSH_HOST:
+        required: true
+      DEV_SSH_PORT:
+        required: true
+      DEV_SSH_USER:
+        required: true
+      DEV_SSH_PASSWORD:
+        required: true
+
+jobs:
+  job1:
+    uses: ./.github/workflows/docker-image-build-push.yml
+    with:
+      branch: ${{ inputs.branch }}
+      build-stage: dev
+      container-name: ${{ inputs.container-name }}
+      is-push-image: ${{ inputs.is-push-image }}
+
+  job2:
+    uses: ./.github/workflows/docker-server-deploy.yml
+    needs: [job1]
+    with:
+      build-stage: dev
+      container-name: ${{ inputs.container-name }}
+      is-skip: ${{ !inputs.is-push-image || !inputs.is-deploy-server }}
+    secrets:
+      DEPLOY_SERVER_HOST: ${{ secrets.DEV_SSH_HOST }}
+      DEPLOY_SERVER_PORT: ${{ secrets.DEV_SSH_PORT }}
+      DEPLOY_SERVER_USERNAME: ${{ secrets.DEV_SSH_USER }}
+      DEPLOY_SERVER_PASSWORD: ${{ secrets.DEV_SSH_PASSWORD }}

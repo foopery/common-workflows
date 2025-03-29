@@ -1,0 +1,98 @@
+name: (Deploy) 도커 컨테이너 교체
+
+on:
+  workflow_call:
+    inputs:
+      build-stage:
+        description: "배포 서버에 따라 전달해주세요. (개발: dev|운영:prod)"
+        required: true
+        default: "dev"
+        type: string
+      container-name:
+        description: "도커 컨테이너명을 전달해주세요."
+        required: true
+        type: string
+      is-skip:
+        description: "해당작업을 무시하기 위해서는 true를 전달해주세요."
+        type: boolean
+    secrets:
+      DEPLOY_SERVER_HOST:
+        required: true
+      DEPLOY_SERVER_PORT:
+        required: true
+      DEPLOY_SERVER_USERNAME:
+        required: true
+      DEPLOY_SERVER_PASSWORD:
+        required: true
+
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>/<containerName>:<buildStage>
+  IMAGE_NAME: ${{ github.repository }}/${{ inputs.container-name }}:${{ inputs.build-stage }}
+
+jobs:
+  docker-server-deploy:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.is-skip != true }}
+
+    steps:
+      - name: Convert to lowercase
+        id: lowercase
+        run: |
+          echo "lowercase=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: SSH Connection and Deploy to Server
+        uses: appleboy/ssh-action@master
+        env:
+          LOWERCASE_IMAGE_NAME: ${{ steps.lowercase.outputs.lowercase }}
+        with:
+          host: ${{ secrets.DEPLOY_SERVER_HOST }}
+          username: ${{ secrets.DEPLOY_SERVER_USERNAME }}
+          password: ${{ secrets.DEPLOY_SERVER_PASSWORD }}
+          port: ${{ secrets.DEPLOY_SERVER_PORT }}
+          script: |
+            # Nginx conf file check and create
+            FILE_NAME="${{ inputs.container-name }}.conf"
+            CONFIG_TEMPLATE="/home/docker-manager/main_nginx_configs/config_form.txt"
+            TARGET_FILE="/home/docker-manager/main_nginx_configs/$FILE_NAME"
+            if [ ! -f "$TARGET_FILE" ]; then
+            echo "컨테이너의 프록시 라우팅 파일이 구성되어있지 않아 새로 생성합니다."
+            CONTAINER_NAME="${{ inputs.container-name }}"
+            # sed "s|URL|$CONTAINER_NAME|g" "$CONFIG_TEMPLATE" > "$TARGET_FILE"
+            sed -e "s|URL|$CONTAINER_NAME|g" -e "s|CONTAINER|$CONTAINER_NAME|g" "$CONFIG_TEMPLATE" > "$TARGET_FILE"
+            fi
+
+            # Docker Images pull
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+            docker pull ${{ env.REGISTRY }}/${{ env.LOWERCASE_IMAGE_NAME }} || exit 1
+
+            # Docker Container kill
+            docker rm -f ${{ inputs.container-name }} || true
+
+            # Docker Container run
+            docker run -d \
+            --name ${{ inputs.container-name }} \
+            --network router \
+            --restart=unless-stopped \
+            ${{ env.REGISTRY }}/${{ env.LOWERCASE_IMAGE_NAME }} || exit 1
+
+            # Prune Docker Images
+            # docker rmi ${{ env.REGISTRY }}/${{ env.LOWERCASE_IMAGE_NAME }}
+            docker image prune -f
+            docker logout ${{ env.REGISTRY }}
+            
+            # docker restart main_nginx
+            echo "Checking main_nginx configuration..."
+            result=$(docker exec main_nginx nginx -t 2>&1)
+            status=$?
+            echo "$result"
+            
+            if [ $status -eq 0 ]; then
+              echo "✅ Nginx configuration is valid"
+              docker exec main_nginx nginx -s reload
+            else
+              echo "❌ Nginx configuration check failed"
+              echo "Checking container status..."
+              exit 1
+            fi

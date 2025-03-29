@@ -15,6 +15,11 @@ on:
         required: false
         default: 'false'
         type: string
+      is-submodule:
+        description: 'git submodule이 포함되어있는지 여부 (true, false)'
+        required: false
+        type: boolean
+        default: false
     secrets:
       PAT:
         required: true
@@ -25,8 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: 'true'
-          token: ${{ secrets.PAT }}
+          submodules: ${{ inputs.is-submodule }}
+          token: ${{ secrets.LIME_TOKEN }}
       - name: Use Node.js
         if: ${{ inputs['is-ci'] == 'true' }}  # CI 진행 여부
         uses: actions/setup-node@v4

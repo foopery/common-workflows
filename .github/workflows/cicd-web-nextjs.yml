@@ -1,0 +1,211 @@
+name: Build and Deploy(nextJs)
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: true
+        type: string
+      stage:
+        description: "Build stage"
+        required: true
+        default: "dev"
+        type: string
+      serviceName:
+        description: "서비스명 (기본: app)"
+        required: true
+        default: "app"
+        type: string
+    secrets:
+      DEV_SSH_HOST:
+        required: true
+      DEV_SSH_PORT:
+        required: true
+      DEV_SSH_USER:
+        required: true
+      DEV_SSH_PASSWORD:
+        required: true
+      DEV_DOCKER_CONTAINER:
+        required: true
+      PROD_SERVER_HOST:
+      PROD_SERVER_PORT:
+      PROD_SERVER_USERNAME:
+      PROD_SERVER_PASSWORD:
+      PROD_DOCKER_CONTAINER:
+
+jobs:
+  cicd-web-nextjs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Set deployment variables
+        id: server-infos
+        shell: bash
+        run: |
+          if [ "${{ inputs.stage }}" == "prod" ]; then
+            echo "Set to PROD"
+            echo "host=${{ secrets.PROD_SERVER_HOST }}" >> $GITHUB_OUTPUT
+            echo "port=${{ secrets.PROD_SERVER_PORT }}" >> $GITHUB_OUTPUT
+            echo "username=${{ secrets.PROD_SERVER_USERNAME }}" >> $GITHUB_OUTPUT
+            echo "password=${{ secrets.PROD_SERVER_PASSWORD }}" >> $GITHUB_OUTPUT
+            if [ -n "${{ secrets.PROD_DOCKER_CONTAINER }}" ]; then
+              echo "deploy_path=/tmp/${{ secrets.PROD_DOCKER_CONTAINER }}" >> $GITHUB_OUTPUT
+              echo "real_deploy_path=/home/deploy" >> $GITHUB_OUTPUT
+              echo "docker_container=${{ secrets.PROD_DOCKER_CONTAINER }}" >> $GITHUB_OUTPUT
+              echo "is_docker=true" >> $GITHUB_OUTPUT
+            else
+              echo "deploy_path=/home/deploy" >> $GITHUB_OUTPUT
+              echo "real_deploy_path=/home/deploy" >> $GITHUB_OUTPUT
+              echo "is_docker=false" >> $GITHUB_OUTPUT
+            fi
+            echo "Deployment variables set successfully [prod]"
+          elif [ "${{ inputs.stage }}" == "dev" ]; then
+            echo "Set to DEV"
+            echo "host=${{ secrets.DEV_SSH_HOST }}" >> $GITHUB_OUTPUT
+            echo "port=${{ secrets.DEV_SSH_PORT }}" >> $GITHUB_OUTPUT
+            echo "username=${{ secrets.DEV_SSH_USER }}" >> $GITHUB_OUTPUT
+            echo "password=${{ secrets.DEV_SSH_PASSWORD }}" >> $GITHUB_OUTPUT
+            echo "deploy_path=/tmp/${{ secrets.DEV_DOCKER_CONTAINER }}" >> $GITHUB_OUTPUT
+            echo "real_deploy_path=/home/deploy" >> $GITHUB_OUTPUT
+            echo "docker_container=${{ secrets.DEV_DOCKER_CONTAINER }}" >> $GITHUB_OUTPUT
+            echo "is_docker=true" >> $GITHUB_OUTPUT
+            echo "Deployment variables set successfully [dev]"
+          else
+            echo "[error] stage is not correct"
+            exit 1
+          fi
+
+      - name: Check setting-infos set
+        if: steps.server-infos.outputs.host == ''
+        run: |
+          echo "Host is not set. Exiting the workflow."
+          exit 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci || (echo "Failed to install dependencies" && exit 1)
+
+      - name: Build
+        if: success()
+        run: |
+          npm run build:${{ inputs.stage }} || (echo "Build failed" && exit 1)
+          echo "Build completed successfully"
+
+      - name: Compress
+        id: deploy-files
+        if: success()
+        env:
+          FILE_NAME: ${{ inputs.serviceName }}-${{ inputs.stage }}.tar
+          DIR_PATH: deploy/${{ inputs.serviceName }}
+        run: |
+          rm -rf ${DIR_PATH}
+          mkdir ${DIR_PATH} -p
+          cp -f ./env/.env ${DIR_PATH}/.env
+          cp -f ./env/.env.${{ inputs.stage }} ${DIR_PATH}/.env.production
+          cp -rf ./public ${DIR_PATH}/public
+          cp -rf ./.next/standalone/* ${DIR_PATH}/
+          cp -rf ./.next/standalone/.next ${DIR_PATH}/.next
+          cp -rf ./.next/static ${DIR_PATH}/.next/static
+          cp -rf ./node_modules/@img ${DIR_PATH}/node_modules/@img
+          cp -f ./release.sh deploy/release.sh
+          tar -cf deploy/${FILE_NAME} -C deploy ${{ inputs.serviceName }} || (echo "Failed to create tar file" && exit 1)
+          echo "target=deploy/${FILE_NAME}" >> $GITHUB_OUTPUT
+          echo "deploy_file_name=${FILE_NAME}" >> $GITHUB_OUTPUT
+          echo "Compression completed successfully"
+
+      # - name: Archive production artifacts
+      #   uses: actions/upload-artifact@v4
+      #   if: inputs.stage == 'prod'
+      #   with:
+      #     name: ${{ inputs.serviceName }}-prod.tar
+      #     path: |
+      #       ${{ steps.deploy-files.outputs.target }}
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@master
+        if: success()
+        with:
+          host: ${{ steps.server-infos.outputs.host }}
+          username: ${{ steps.server-infos.outputs.username }}
+          password: ${{ steps.server-infos.outputs.password }}
+          port: ${{ steps.server-infos.outputs.port }}
+          source: "${{ steps.deploy-files.outputs.target }},deploy/release.sh"
+          target: ${{ steps.server-infos.outputs.deploy_path }}
+          strip_components: 1
+          rm: true
+
+      - name: Move files to Docker container and deploy
+        uses: appleboy/ssh-action@master
+        if: success() && steps.server-infos.outputs.is_docker == 'true' && startsWith(steps.server-infos.outputs.deploy_path, '/tmp/')
+        env:
+          TMP_DIR: ${{ steps.server-infos.outputs.deploy_path }}
+          DEPLOY_PATH: ${{ steps.server-infos.outputs.real_deploy_path }}
+          DOCKER_CONTAINER: ${{ steps.server-infos.outputs.docker_container }}
+          DEPLOY_FILE: ${{ steps.deploy-files.outputs.deploy_file_name }}
+        with:
+          host: ${{ steps.server-infos.outputs.host }}
+          username: ${{ steps.server-infos.outputs.username }}
+          password: ${{ steps.server-infos.outputs.password }}
+          port: ${{ steps.server-infos.outputs.port }}
+          envs: TMP_DIR,DEPLOY_PATH,DOCKER_CONTAINER,DEPLOY_FILE
+          script_stop: true
+          script: |
+            echo "Copying files to Docker container"
+            docker cp $TMP_DIR/. $DOCKER_CONTAINER:$DEPLOY_PATH || (echo "Failed to copy files to Docker container" && exit 1)
+            echo "Executing release script"
+            docker exec -e DEPLOY_PATH=$DEPLOY_PATH -e DEPLOY_FILE=$DEPLOY_FILE $DOCKER_CONTAINER /bin/bash -c '
+              export NVM_DIR=~/.nvm
+              source ~/.nvm/nvm.sh
+              echo "Current directory: $(pwd)"
+              echo "DEPLOY_PATH: $DEPLOY_PATH"
+              echo "Contents of DEPLOY_PATH:"
+              ls -la $DEPLOY_PATH
+              cd $DEPLOY_PATH || (echo "Failed to change directory" && exit 1)
+              echo "Current directory after cd: $(pwd)"
+              chmod +x release.sh
+              echo "Contents of current directory:"
+              ls -la
+              echo "Release Target file is $DEPLOY_PATH/$DEPLOY_FILE"
+              ./release.sh $DEPLOY_PATH/$DEPLOY_FILE || (echo "Release script failed" && exit 1)
+              echo "Release completed successfully"
+            '
+
+      - name: Server Deploy
+        uses: appleboy/ssh-action@master
+        if: success() && steps.server-infos.outputs.is_docker != 'true'
+        env:
+          DEPLOY_PATH: ${{ steps.server-infos.outputs.deploy_path }}
+          DEPLOY_FILE: ${{ steps.deploy-files.outputs.deploy_file_name }}
+        with:
+          host: ${{ steps.server-infos.outputs.host }}
+          username: ${{ steps.server-infos.outputs.username }}
+          password: ${{ steps.server-infos.outputs.password }}
+          port: ${{ steps.server-infos.outputs.port }}
+          envs: DEPLOY_PATH,DEPLOY_FILE
+          script_stop: true
+          script: |
+            export NVM_DIR=~/.nvm
+            source ~/.nvm/nvm.sh
+            echo "Current directory: $(pwd)"
+            echo "DEPLOY_PATH: $DEPLOY_PATH"
+            echo "Contents of DEPLOY_PATH:"
+            ls -la $DEPLOY_PATH
+            cd $DEPLOY_PATH || (echo "Failed to change directory" && exit 1)
+            echo "Current directory after cd: $(pwd)"
+            chmod +x release.sh
+            echo "Contents of current directory:"
+            ls -la
+            echo "Release Target file is $DEPLOY_PATH/$DEPLOY_FILE"
+            ./release.sh $DEPLOY_PATH/$DEPLOY_FILE || (echo 'Release script failed' && exit 1)
+            echo 'Release completed successfully'

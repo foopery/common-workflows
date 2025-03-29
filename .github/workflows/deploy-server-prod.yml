@@ -1,0 +1,52 @@
+name: (prod) 서버 도커 이미지 생성 및 배포
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: "배포 대상 브랜치명을 전달해주세요."
+        required: true
+        type: string
+      container-name:
+        description: "도커 컨테이너명을 전달해주세요."
+        required: true
+        type: string
+      is-push-image:
+        description: "이미지 push 여부를 전달해주세요(true|false)"
+        type: boolean
+        default: true
+      is-deploy-server:
+        description: "서버 배포 여부를 전달해주세요(true|false)"
+        type: boolean
+        default: true
+    secrets:
+      PROD_SERVER_HOST:
+        required: true
+      PROD_SERVER_PORT:
+        required: true
+      PROD_SERVER_USERNAME:
+        required: true
+      PROD_SERVER_PASSWORD:
+        required: true
+
+jobs:
+  job1:
+    uses: ./.github/workflows/docker-image-build-push.yml
+    with:
+      branch: ${{ inputs.branch }}
+      build-stage: prod
+      container-name: ${{ inputs.container-name }}
+      is-push-image: ${{ inputs.is-push-image }}
+
+  job2:
+    uses: ./.github/workflows/docker-server-deploy.yml
+    needs: [job1]
+    with:
+      build-stage: prod
+      container-name: ${{ inputs.container-name }}
+      is-skip: ${{ !inputs.is-push-image || !inputs.is-deploy-server }}
+    secrets:
+      DEPLOY_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+      DEPLOY_SERVER_PORT: ${{ secrets.PROD_SERVER_PORT }}
+      DEPLOY_SERVER_USERNAME: ${{ secrets.PROD_SERVER_USERNAME }}
+      DEPLOY_SERVER_PASSWORD: ${{ secrets.PROD_SERVER_PASSWORD }}
