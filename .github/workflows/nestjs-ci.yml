@@ -21,17 +21,12 @@ on:
         type: boolean
         default: false
     secrets:
-      PAT:
-        required: true
 
 jobs:
   continuous-integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: ${{ inputs.is-submodule }}
-          token: ${{ secrets.LIME_TOKEN }}
       - name: Use Node.js
         if: ${{ inputs['is-ci'] == 'true' }}  # CI 진행 여부
         uses: actions/setup-node@v4
