@@ -20,7 +20,6 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
 
 jobs:
   continuous-integration:
