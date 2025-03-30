@@ -8,9 +8,6 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      LIME_TOKEN:
-        required: true
 
 jobs:
   image-build-and-push-linux-amd64:
@@ -25,12 +22,6 @@ jobs:
         id: branch_name
         run: |
           echo "branch_name=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
-
-      - name: Checkout code
-        uses: actions/checkout@v2
-        with:
-          submodules: ${{ inputs.is-submodule }}
-          token: ${{ secrets.LIME_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
