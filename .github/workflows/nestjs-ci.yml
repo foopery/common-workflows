@@ -15,11 +15,6 @@ on:
         required: false
         default: 'false'
         type: string
-      is-submodule:
-        description: 'git submodule이 포함되어있는지 여부 (true, false)'
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   continuous-integration:
