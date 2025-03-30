@@ -2,12 +2,6 @@ name: NestJS Image Build and Push
 
 on:
   workflow_call:
-    inputs:
-      is-submodule:
-        description: 'git submodule이 포함되어있는지 여부 (true, false)'
-        required: false
-        type: boolean
-        default: false
 
 jobs:
   image-build-and-push-linux-amd64:
